@@ -158,7 +158,6 @@ export function createSeedData(now: Date = new Date()): SeedData {
   const logs: CallLog[] = [];
   const today = startOfDay(now);
   let day = addDays(today, -15);
-  let seq = 0;
   const unreached = new Map<string, number>();
   const forgotten = new Set<string>();
   const leadsOf = new Map(callers.map((m) => [m.id, leads.filter((l) => l.assigneeId === m.id)]));
@@ -166,7 +165,12 @@ export function createSeedData(now: Date = new Date()): SeedData {
 
   while (day <= today) {
     if (isBusinessDay(day)) {
-      for (const m of callers) {
+      for (const [mi, m] of callers.entries()) {
+        // 乱数は「日付×メンバー」ごとに分ける。今日の分が時刻で途中までしか作られなくても、
+        // ほかのメンバーや過去の日の記録が変わらないようにするため（開き直すたびに数字が揺れない）
+        const dayKey = toDateKey(day);
+        const rand = mulberry32(Number(dayKey.replaceAll("-", "")) * 10 + mi);
+        const pick = <T,>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
         const prof = PROFILES[m.id];
         const myLeads = leadsOf.get(m.id)!;
         const n = prof.callsPerDay + Math.floor(rand() * 9) - 4;
@@ -206,9 +210,8 @@ export function createSeedData(now: Date = new Date()): SeedData {
           }
           const insight = outcome === "no_answer" ? null : sampleCallInsight({ memo, outcome, now: at });
 
-          seq++;
           logs.push({
-            id: `log-${String(seq).padStart(5, "0")}`,
+            id: `demo-${dayKey}-${m.id}-${String(k).padStart(3, "0")}`,
             leadId: lead.id,
             memberId: m.id,
             at: at.toISOString(),
@@ -275,9 +278,9 @@ function weighted<T extends string>(weights: Record<T, number>, rand: () => numb
 }
 
 /**
- * デモデータとして作った記録か。デモの記録は「log-00001」の形で、利用者が保存した記録（log-時刻-乱数）とは形が違う。
+ * デモデータとして作った記録か。デモの記録は「demo-日付-メンバー-番号」の形で、利用者が保存した記録（log-時刻-乱数）とは形が違う。
  * デモの記録は人が確認していないので、画面で「人が確認済み」と書かないために使う。
  */
 export function isDemoLog(log: Pick<CallLog, "id">): boolean {
-  return /^log-\d{5}$/.test(log.id);
+  return log.id.startsWith("demo-");
 }

@@ -330,14 +330,23 @@ export function sampleTeamInsight(stats: TeamStats, logs: CallLog[], members: Me
   const topObjection = (Object.entries(stats.objections) as [Objection, number][])
     .filter(([k, v]) => k !== "none" && v > 0)
     .sort((a, b) => b[1] - a[1])[0];
+  // 同じ件数で並んだ理由があれば、どちらか一方を「一番」と言い切らない
+  const tied = topObjection
+    ? (Object.entries(stats.objections) as [Objection, number][]).filter(([k, v]) => k !== "none" && k !== topObjection[0] && v === topObjection[1])
+    : [];
+  // 根拠は同じ文面のメモを避けて選ぶ（同じ文が並ぶと、同じ電話が何度も出ているように見えるため）
+  const uniqueByMemo = (xs: CallLog[]) => [...new Map(xs.map((l) => [l.memo, l])).values()];
   const objLogs = topObjection
-    ? logs.filter((l) => countsAsObjection(l) && l.insight?.objection === topObjection[0]).slice(0, 3)
+    ? uniqueByMemo(logs.filter((l) => countsAsObjection(l) && (l.insight?.objection === topObjection[0] || tied.some(([k]) => l.insight?.objection === k)))).slice(0, 3)
     : [];
   const objection = topObjection && objLogs.length ? topObjection : null;
   if (objection) {
+    const labels = [objection[0], ...tied.map(([k]) => k)].map((k) => `「${OBJECTION_LABEL[k]}」`).join("と");
     findings.push({
-      title: `一番多い断りは「${OBJECTION_LABEL[objection[0]]}」`,
-      detail: `担当者と話せた電話の断りのうち、${objection[1]}件がこの理由です。${COACHING[objection[0]]}`,
+      title: tied.length ? `断りの理由は${labels}が同数で最多` : `一番多い断りは${labels}`,
+      detail: tied.length
+        ? `担当者と話せた電話の断りのうち、どちらも${objection[1]}件ずつでした。${COACHING[objection[0]]}`
+        : `担当者と話せた電話の断りのうち、${objection[1]}件がこの理由です。${COACHING[objection[0]]}`,
       evidenceLogIds: objLogs.map((l) => l.id),
     });
   }

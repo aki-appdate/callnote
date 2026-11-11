@@ -29,7 +29,7 @@ export function Header() {
 
   const nav = [
     { href: "/calls", label: "架電", show: me?.role !== "sv" },
-    { href: "/sv", label: "SVダッシュボード", show: true },
+    { href: "/sv", label: "SVダッシュボード", show: me?.role === "sv" },
   ];
 
   return (

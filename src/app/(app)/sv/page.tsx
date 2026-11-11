@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/components/AppProvider";
 import { BarList, DailyColumns } from "@/components/sv/Charts";
 import { TeamInsightPanel } from "@/components/sv/TeamInsightPanel";
@@ -25,7 +25,14 @@ function rangeBounds(range: Range, now: Date): { from: Date; to: Date } {
 }
 
 export default function SvPage() {
-  const { logs, members, leads } = useApp();
+  const { logs, members, leads, me, setMe } = useApp();
+  // SVダッシュボードはSVの画面。URLを直接開いたときなど、メンバーのままならSVに切り替える
+  useEffect(() => {
+    if (me && me.role !== "sv") {
+      const sv = members.find((m) => m.role === "sv");
+      if (sv) setMe(sv.id);
+    }
+  }, [me, members, setMe]);
   // 月曜の朝など「今週」の記録がまだ少ないときは、最初から直近2週間を見せる（空の画面で朝会を始めない）
   const [weekWasThin] = useState(() => {
     const { from, to } = rangeBounds("week", new Date());

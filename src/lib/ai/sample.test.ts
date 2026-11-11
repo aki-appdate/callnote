@@ -278,9 +278,46 @@ describe("sampleTeamInsight（最初のデモデータ）", () => {
     const to = addDays(startOfDay(NOW), 1);
     const logs = filterLogsByRange(seed.logs, from, to);
     const r = sampleTeamInsight(computeTeamStats({ ...seed, from, to, now: NOW }), logs, seed.members);
-    const obj = r.findings.find((f) => f.title.startsWith("一番多い断り"));
+    const obj = r.findings.find((f) => f.title.includes("断り"));
     expect(obj).toBeDefined();
     const byId = new Map(logs.map((l) => [l.id, l]));
     for (const id of obj!.evidenceLogIds) expect(["decision_maker", "rejected"]).toContain(byId.get(id)!.outcome);
+  });
+
+  it("断りの理由が同数で並んだときは、一方を「一番」と言い切らない", () => {
+    const from = addDays(startOfDay(NOW), -13);
+    const to = addDays(startOfDay(NOW), 1);
+    const logs = filterLogsByRange(seed.logs, from, to);
+    const stats = computeTeamStats({ ...seed, from, to, now: NOW });
+    const [a, b] = (Object.entries(stats.objections) as [keyof typeof stats.objections, number][])
+      .filter(([k, v]) => k !== "none" && v > 0)
+      .sort((x, y) => y[1] - x[1]);
+    const tiedStats = { ...stats, objections: { ...stats.objections, [b[0]]: a[1] } };
+    const r = sampleTeamInsight(tiedStats, logs, seed.members);
+    const obj = r.findings.find((f) => f.title.includes("断り"));
+    expect(obj?.title).toContain("同数で最多");
+    expect(obj?.title).not.toContain("一番多い");
+  });
+
+  it("断りの気づきの根拠に、同じ文面のメモを並べない", () => {
+    const from = addDays(startOfDay(NOW), -13);
+    const to = addDays(startOfDay(NOW), 1);
+    const logs = filterLogsByRange(seed.logs, from, to);
+    const r = sampleTeamInsight(computeTeamStats({ ...seed, from, to, now: NOW }), logs, seed.members);
+    const obj = r.findings.find((f) => f.title.includes("断り"))!;
+    const byId = new Map(logs.map((l) => [l.id, l]));
+    const memos = obj.evidenceLogIds.map((id) => byId.get(id)!.memo);
+    expect(new Set(memos).size).toBe(memos.length);
+  });
+});
+
+describe("デモデータ（時刻が進んでも揺れない）", () => {
+  it("同じ日のうちに時刻が進んでも、それより前の記録は変わらない", () => {
+    const morning = createSeedData(new Date(2026, 10, 11, 10, 0));
+    const evening = createSeedData(new Date(2026, 10, 11, 18, 30));
+    const cutoff = new Date(2026, 10, 11, 10, 0).getTime();
+    const before = (logs: typeof morning.logs) =>
+      logs.filter((l) => new Date(l.at).getTime() <= cutoff).map((l) => `${l.id}|${l.at}|${l.outcome}|${l.memo}`).sort();
+    expect(before(evening.logs)).toEqual(before(morning.logs));
   });
 });
