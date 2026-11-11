@@ -1,5 +1,7 @@
 # CallNote — テレアポチームのAI営業アシスタント
 
+[![CI](https://github.com/aki-appdate/callnote/actions/workflows/ci.yml/badge.svg)](https://github.com/aki-appdate/callnote/actions/workflows/ci.yml)
+
 架電メモをAIが整理し、**次の一手**と**チームの改善点**を見える化するWebアプリです。
 テレアポのオペレーターとSV（現場リーダー）を経験した筆者が、現場で感じた課題をもとに作りました。設計・仕様決め・動作確認は筆者、実装は Claude Code（AIコーディングツール）です。
 
