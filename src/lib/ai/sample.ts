@@ -290,12 +290,12 @@ export const TEAM_MIN_CALLS = 30;
 /** メンバー1人について「受付で止まりがち」と言うのに必要な最低の架電数 */
 export const MEMBER_MIN_CALLS = 20;
 
-/** 記録が少ない期間に返す分析。数件の偏りで「誰が悪い」と言わないため、結論は出さない */
 /** 根拠は同じ文面のメモを避けて選ぶ（同じ文が並ぶと、同じ電話が何度も出ているように見えるため） */
 function uniqueByMemo(xs: CallLog[]): CallLog[] {
   return [...new Map(xs.map((l) => [l.memo, l])).values()];
 }
 
+/** 記録が少ない期間に返す分析。数件の偏りで「誰が悪い」と言わないため、結論は出さない */
 export function thinTeamInsight(stats: TeamStats, logs: CallLog[]): TeamInsight {
   return {
     headline: `記録が少なめ（${stats.team.calls}件）のため、まだ傾向は言い切れません`,

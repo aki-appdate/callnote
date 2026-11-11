@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "@/components/AppProvider";
 import { BarList, DailyColumns } from "@/components/sv/Charts";
 import { TeamInsightPanel } from "@/components/sv/TeamInsightPanel";
@@ -29,9 +29,13 @@ function rangeBounds(range: Range, now: Date): { from: Date; to: Date } {
 
 export default function SvPage() {
   const { logs, members, leads, me, setMe } = useApp();
-  // SVダッシュボードはSVの画面。URLを直接開いたときなど、メンバーのままならSVに切り替える
+  // SVダッシュボードはSVの画面。URLを直接開いたときなど、開いた時点でメンバーならSVに切り替える。
+  // 開いたあとに利用者をメンバーへ切り替えた場合（架電画面へ移る途中）は戻さないよう、最初の1回だけ行う
+  const checkedRole = useRef(false);
   useEffect(() => {
-    if (me && me.role !== "sv") {
+    if (checkedRole.current || !me) return;
+    checkedRole.current = true;
+    if (me.role !== "sv") {
       const sv = members.find((m) => m.role === "sv");
       if (sv) setMe(sv.id);
     }
@@ -106,9 +110,9 @@ export default function SvPage() {
         </p>
       )}
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] lg:grid-rows-[auto_auto_auto_1fr]">
         {/* 右の欄：紙の集計欄のように、数字を縦に読み下す。その下に、今日片づけるフォロー */}
-        <aside className="max-lg:contents lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:space-y-5">
+        <aside className="max-lg:contents lg:col-start-2 lg:row-span-4 lg:row-start-1 lg:space-y-5">
           <section aria-labelledby="tally" className="rounded-md border border-line bg-surface px-5 pt-4 pb-3 max-lg:order-1">
             <h2 id="tally" className="flex items-baseline justify-between border-b-2 border-ink pb-2 text-base font-bold">
               集計<span className="text-xs font-normal text-ink-muted">{rangeLabel}</span>
