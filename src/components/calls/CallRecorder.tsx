@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../AppProvider";
-import { AiSourceBadge, btn, Card, cx, Icon } from "../ui";
+import { AiSourceBadge, btn, Card, cx, Icon, MarkerMark } from "../ui";
 import { analyzeCall } from "@/lib/ai";
 import { OBJECTION_LABEL, OUTCOME_LABEL, OUTCOME_ORDER, TEMPERATURE_LABEL } from "@/lib/labels";
 import { toDateKey } from "@/lib/dates";
@@ -179,7 +179,7 @@ export function CallRecorder({ lead, history, onSaving, onNext }: { lead: Lead; 
             disabled={phase !== "input"}
             rows={3}
             maxLength={400}
-            placeholder="例）担当者と話せた。他社でリース中、満了は来年春。見積があれば比較したい"
+            placeholder="例）担当者と話せた。他社でリース中、満了は来年3月。見積があれば比較したい"
             className="mt-2.5 w-full rounded-[5px] border border-line-strong bg-surface px-3 py-2 text-sm leading-relaxed placeholder:text-ink-muted focus:border-ink disabled:bg-canvas disabled:text-ink-soft"
           />
           <p className="mt-1 text-right font-mono text-[11px] text-ink-muted tabular-nums">{memo.length}/400</p>
@@ -188,7 +188,7 @@ export function CallRecorder({ lead, history, onSaving, onNext }: { lead: Lead; 
         {phase === "input" || phase === "analyzing" ? (
           <div className="flex flex-wrap items-center gap-2">
             <button className={btn.primary} disabled={!canAnalyze} onClick={runAi} aria-busy={phase === "analyzing"}>
-              <Icon name="spark" className={phase === "analyzing" ? "animate-spin" : undefined} />
+              <MarkerMark busy={phase === "analyzing"} />
               {phase === "analyzing" ? "AIが整理しています…" : "AIで整理する"}
             </button>
             <button className={btn.secondary} disabled={outcome === null || phase !== "input"} onClick={() => save(null)}>

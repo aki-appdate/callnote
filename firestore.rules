@@ -17,7 +17,17 @@ service cloud.firestore {
       return v == null || (v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
     }
 
+    // 文字列だけ・1つ max 文字まで・最大3つのリスト。ルールではループが書けないので、3つまでを1つずつ確かめる
+    function isShortStringList3(l, max) {
+      return l is list
+        && l.size() <= 3
+        && (l.size() < 1 || isShortString(l[0], max))
+        && (l.size() < 2 || isShortString(l[1], max))
+        && (l.size() < 3 || isShortString(l[2], max));
+    }
+
     // AIの整理結果（人が確認したもの）。src/lib/schemas.ts と同じ形・上限
+    // 「次に話すこと」は画面で1行60文字まで（TALK_POINT_MAX_CHARS）、「確認してほしいこと」は80文字まで
     function isValidInsight(i) {
       return i is map
         && i.keys().hasOnly(['summary', 'temperature', 'objection', 'nextAction', 'coachingTip', 'uncertainties'])
@@ -28,11 +38,9 @@ service cloud.firestore {
         && i.nextAction is map
         && i.nextAction.keys().hasOnly(['date', 'talkPoints'])
         && isDateKeyOrNull(i.nextAction.date)
-        && i.nextAction.talkPoints is list
-        && i.nextAction.talkPoints.size() <= 3
+        && isShortStringList3(i.nextAction.talkPoints, 60)
         && isShortString(i.coachingTip, 200)
-        && i.uncertainties is list
-        && i.uncertainties.size() <= 3;
+        && isShortStringList3(i.uncertainties, 80);
     }
 
     match /workspaces/{uid} {

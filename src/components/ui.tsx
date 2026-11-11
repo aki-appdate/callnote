@@ -80,9 +80,30 @@ export function AiSourceBadge({ source, onDark = false }: { source: AiSource; on
         onDark ? "border-console-line text-console-text" : "border-line-strong text-ink-soft",
       )}
     >
-      <Icon name="spark" className={cx("size-3", source === "gemini" && (onDark ? "text-marker" : "text-ink"))} />
+      <MarkerMark className={source === "gemini" ? undefined : "opacity-50"} />
       {label}
     </span>
+  );
+}
+
+/**
+ * AIの印。キラキラ（✧）ではなく、蛍光ペンをひと引きした線。
+ * 「AIはメモに線を引いて要点を拾うだけ。決めるのは人」という役割をそのまま形にしている。
+ */
+export function MarkerMark({ className, busy = false }: { className?: string; busy?: boolean }) {
+  return (
+    <svg viewBox="0 0 22 10" aria-hidden="true" className={cx("h-2.5 w-[1.4rem] shrink-0 text-marker", busy && "animate-pulse", className)}>
+      <path d="M1.5 7.2 3.4 2.6Q11 1.6 20.6 2.2L19.2 7.6Q10.5 8.4 1.5 7.2Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 蛍光ペンを引いた文字。要点・選んでいるもの・AIが読んだところに使う */
+export function Hl({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <mark className={cx("box-decoration-clone bg-[linear-gradient(transparent_58%,var(--color-marker)_58%,var(--color-marker)_92%,transparent_92%)] px-0.5 text-inherit", className)}>
+      {children}
+    </mark>
   );
 }
 
@@ -98,7 +119,6 @@ export function pct(n: number): string {
 // ---- アイコン（インラインSVG・線の太さ 1.75 で統一） ----
 
 type IconName =
-  | "spark"
   | "phone"
   | "check"
   | "alert"
@@ -112,7 +132,6 @@ type IconName =
   | "chevron-down";
 
 const PATHS: Record<IconName, React.ReactNode> = {
-  spark: <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.5 6.5l2.5 2.5M15 15l2.5 2.5M17.5 6.5 15 9M9 15l-2.5 2.5" />,
   phone: (
     <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />
   ),

@@ -5,7 +5,7 @@ import { callInsightJsonSchema, callInsightSchema, teamInsightJsonSchema, teamIn
 import type { AiSource, CallInsight, CallLog, CallOutcome, Lead, Member, TeamInsight } from "../types";
 import { generateStructured } from "./gemini";
 import { buildCallPrompt, buildTeamPrompt, CALL_SYSTEM, TEAM_SYSTEM } from "./prompts";
-import { clampTalkPoints, sampleCallInsight, sampleTeamInsight } from "./sample";
+import { clampTalkPoints, sampleCallInsight, sampleTeamInsight, TEAM_MIN_CALLS } from "./sample";
 
 // 画面から呼ぶのはこのファイルだけ。
 // Geminiが使えれば使い、使えなければ（未設定・回数の上限・エラー・返答の形が不正）見本の返答に切り替える。
@@ -83,7 +83,8 @@ export async function analyzeTeam(stats: TeamStats, logs: CallLog[], members: Me
     note,
   });
   const app = getFirebaseApp();
-  if (!app || logs.length === 0) return fallback();
+  // 記録が少ない期間はAIに聞かない（数件の偏りで結論を出させない・無料枠を使わない）
+  if (!app || logs.length === 0 || stats.team.calls < TEAM_MIN_CALLS) return fallback();
   if (!takeQuota()) return fallback("今日のAI利用回数の上限に達したため、見本の返答を表示しています");
 
   try {

@@ -7,6 +7,7 @@ import { LeadDetail } from "@/components/calls/LeadDetail";
 import { Num } from "@/components/ui";
 import { addDays, formatDateJa, startOfDay, toDateKey } from "@/lib/dates";
 import { computeTeamStats } from "@/lib/kpi";
+import { buildTodayList, DAILY_CALL_TARGET } from "@/lib/worklist";
 
 export default function CallsPage() {
   const { me, leads, logs, members } = useApp();
@@ -16,22 +17,6 @@ export default function CallsPage() {
   const myLeads = useMemo(() => leads.filter((l) => l.assigneeId === me?.id), [leads, me]);
   const todayKey = toDateKey(new Date());
 
-  const lists = useMemo(() => {
-    const due = myLeads
-      .filter(
-        (l) =>
-          (l.status === "new" || l.status === "calling" || l.status === "followup") &&
-          (l.nextCallAt === null || toDateKey(new Date(l.nextCallAt)) <= todayKey),
-      )
-      .sort((a, b) => (a.nextCallAt ?? "9").localeCompare(b.nextCallAt ?? "9"));
-    return {
-      today: due,
-      dueFollowups: due.filter((l) => l.status !== "new").length,
-      open: myLeads.filter((l) => l.status !== "appointment" && l.status !== "lost"),
-      won: myLeads.filter((l) => l.status === "appointment"),
-    };
-  }, [myLeads, todayKey]);
-
   const myToday = useMemo(() => {
     if (!me) return null;
     const now = new Date();
@@ -39,6 +24,17 @@ export default function CallsPage() {
       (m) => m.memberId === me.id,
     );
   }, [logs, members, leads, me]);
+
+  const lists = useMemo(() => {
+    const today = buildTodayList(myLeads, new Date(), myToday?.calls ?? 0);
+    return {
+      today: today.leads,
+      dueFollowups: today.followups,
+      fresh: today.fresh,
+      open: myLeads.filter((l) => l.status !== "appointment" && l.status !== "lost"),
+      won: myLeads.filter((l) => l.status === "appointment"),
+    };
+  }, [myLeads, myToday]);
 
   if (!me) return null;
   if (me.role === "sv") {
@@ -51,7 +47,6 @@ export default function CallsPage() {
 
   const current = lists[tab];
   const selected = leads.find((l) => l.id === selectedId) ?? current[0] ?? null;
-  const newCount = lists.today.length - lists.dueFollowups;
 
   return (
     <div className="space-y-5">
@@ -68,7 +63,9 @@ export default function CallsPage() {
           <div className="flex items-baseline gap-2 border-b border-line bg-marker-soft px-4 py-2.5 max-sm:w-full sm:border-r sm:border-b-0">
             <dt className="text-xs font-medium text-ink">残りのフォロー</dt>
             <dd className="text-2xl leading-none font-bold">{lists.dueFollowups}</dd>
-            <dd className="text-xs text-ink-soft">件・ほかに新規 {newCount.toLocaleString()}件</dd>
+            <dd className="text-xs text-ink-soft">
+              件・ほかに新規 <Num>{lists.fresh}</Num>件<span className="text-ink-muted">（1日{DAILY_CALL_TARGET}件の目安まで）</span>
+            </dd>
           </div>
           <Tally label="今日の架電" value={myToday?.calls ?? 0} />
           <Tally label="話せた" value={myToday?.connects ?? 0} />
@@ -94,8 +91,19 @@ export default function CallsPage() {
             <LeadDetail key={selected.id} lead={selected} onSaving={() => setSelectedId(selected.id)} onNext={() => { setTab("today"); setSelectedId(null); }} />
           ) : (
             <div className="rounded-md border border-dashed border-line-strong p-10 text-center">
-              <p className="font-bold">この一覧に案件はありません</p>
-              <p className="mt-1 text-sm text-ink-muted">ほかのタブ（担当中・アポ済み）を見てみてください。</p>
+              {tab === "today" ? (
+                <>
+                  <p className="font-bold">今日の分はかけ終わりました</p>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    予定日が来たフォローはなく、1日{DAILY_CALL_TARGET}件の目安にも届いています。追加でかけるなら「担当中」から選んでください。
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-bold">この一覧に案件はありません</p>
+                  <p className="mt-1 text-sm text-ink-muted">ほかのタブ（今日かける・担当中）を見てみてください。</p>
+                </>
+              )}
             </div>
           )}
         </div>

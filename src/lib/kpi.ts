@@ -1,6 +1,6 @@
 // SV画面の数字はすべてここで計算する。画面からは計算式を追い出し、テストで確かめられるようにする。
 
-import { addDays, startOfDay, toDateKey } from "./dates";
+import { addDays, isBusinessDay, startOfDay, toDateKey } from "./dates";
 import { OBJECTION_OUTCOMES } from "./labels";
 import type { CallLog, Lead, Member, Objection } from "./types";
 
@@ -94,9 +94,8 @@ export function computeTeamStats(params: {
   for (let d = startOfDay(from); d < to; d = addDays(d, 1)) {
     const key = toDateKey(d);
     const dayLogs = byDay.get(key) ?? [];
-    if (d.getDay() === 0 || d.getDay() === 6) {
-      if (dayLogs.length === 0) continue;
-    }
+    // 土日・祝日は、記録がある日だけ並べる
+    if (!isBusinessDay(d) && dayLogs.length === 0) continue;
     daily.push({
       date: key,
       calls: dayLogs.length,

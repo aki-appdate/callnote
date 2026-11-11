@@ -8,9 +8,12 @@ import {
   BEST_MIN_CALLS,
   clampTalkPoints,
   detectObjection,
+  findContractEnd,
+  memoHighlights,
   parseDateFromMemo,
   sampleCallInsight,
   sampleTeamInsight,
+  TEAM_MIN_CALLS,
 } from "./sample";
 
 // 2026-11-11 は水曜日
@@ -55,6 +58,32 @@ describe("parseDateFromMemo", () => {
     expect(toDateKey(parseDateFromMemo("11月12日に話した件", fri)!)).toBe("2027-11-12");
   });
 
+  it.each([
+    ["満了は来年の3月", "2027-03-01"],
+    ["3月末に満了", "2027-03-31"],
+    ["来年の3月末", "2027-03-31"],
+    ["4月中旬にもう一度", "2027-04-12"], // 4/11 は日曜なので 4/12
+    ["12月にまた連絡", "2026-12-01"],
+    ["11月末までに返事", "2026-11-30"],
+    ["1月に連絡", "2027-01-04"], // 1/1〜1/3 は年始の休み
+  ])("月の言い方「%s」→ %s", (memo, expected) => {
+    expect(toDateKey(parseDateFromMemo(memo, WED)!)).toBe(expected);
+  });
+
+  it("「3か月」「3ヶ月」は月の名前として読まない", () => {
+    expect(parseDateFromMemo("3か月ほど様子を見る", WED)).toBeNull();
+    expect(parseDateFromMemo("3ヶ月前に入れ替えた", WED)).toBeNull();
+  });
+
+  it("相対的な言い方が祝日に当たったら、次の営業日", () => {
+    const fri = new Date(2026, 10, 20, 15, 0); // 11/23（月）は勤労感謝の日
+    expect(toDateKey(parseDateFromMemo("来週また電話", fri)!)).toBe("2026-11-24");
+    expect(toDateKey(parseDateFromMemo("来週月曜にもう一度", fri)!)).toBe("2026-11-24");
+    expect(toDateKey(parseDateFromMemo("3日後に", fri)!)).toBe("2026-11-24");
+    const dec = new Date(2026, 11, 28, 10, 0);
+    expect(toDateKey(parseDateFromMemo("明日の午前に", dec)!)).toBe("2027-01-04");
+  });
+
   it("日付の言及がなければ null", () => {
     expect(parseDateFromMemo("担当者と話せた", WED)).toBeNull();
   });
@@ -95,6 +124,39 @@ describe("sampleCallInsight", () => {
     expect(r.nextAction.date).toBe("2027-02-09");
   });
 
+  it("満了の時期が書いてあれば、満了日ではなく、満了の2〜3か月前を次回日にする", () => {
+    const r = sampleCallInsight({
+      memo: "総務の山本さんと話せた。複合機は他社でリース中で、満了は来年の3月。費用は高いと感じているので、比較の見積があれば見たいとのこと",
+      outcome: "decision_maker",
+      now: WED,
+    });
+    expect(r.objection).toBe("already_have");
+    // 3月末の満了 → 1月の最初の営業日（1/1〜1/3は休み）
+    expect(r.nextAction.date).toBe("2027-01-04");
+    expect(r.nextAction.talkPoints[0]).toBe("満了の2〜3か月前に比較見積を提案");
+    // 満了時期を「聞く」とは言わない（もう分かっているので）
+    expect(r.nextAction.talkPoints.join("")).not.toContain("満了時期を聞く");
+    expect(r.coachingTip).not.toContain("満了時期を聞けば");
+  });
+
+  it("満了が近ければ、すぐに比較見積を出す", () => {
+    const r = sampleCallInsight({ memo: "他社でリース中。12月末で満了", outcome: "decision_maker", now: WED });
+    expect(r.nextAction.talkPoints[0]).toContain("すぐに比較見積");
+    expect(r.nextAction.date).toBe("2026-11-12");
+  });
+
+  it("満了に触れていても月が分からなければ、月を確かめる", () => {
+    const r = sampleCallInsight({ memo: "他社でリース中で、満了は来年の春とのこと", outcome: "decision_maker", now: WED });
+    expect(r.nextAction.talkPoints[0]).toBe("満了の月を確かめる");
+    expect(r.uncertainties.some((u) => u.includes("満了の月"))).toBe(true);
+  });
+
+  it("受付止まりのメモに満了と書いてあっても、担当者の話としては使わない", () => {
+    expect(findContractEnd("満了は来年の3月", WED)?.date && true).toBe(true);
+    const r = sampleCallInsight({ memo: "受付の方いわく、満了は来年の3月", outcome: "gatekeeper", now: WED });
+    expect(r.nextAction.talkPoints[0]).toContain("在席");
+  });
+
   it("折り返しの日時が無ければ人に確認を求める", () => {
     const r = sampleCallInsight({ memo: "担当者が会議中で折り返し", outcome: "callback", now: WED });
     expect(r.uncertainties).toContain("折り返しの日時がメモにありません");
@@ -125,6 +187,18 @@ describe("sampleCallInsight", () => {
     const fri = new Date(2026, 10, 13, 15, 0);
     const r = sampleCallInsight({ memo: "不在", outcome: "no_answer", now: fri });
     expect(r.nextAction.date).toBe("2026-11-16");
+  });
+});
+
+describe("memoHighlights", () => {
+  it("判断の決め手になった言葉に線を引き、つなげると元のメモに戻る", () => {
+    const memo = "総務の山本さんと話せた。複合機は他社でリース中で、満了は来年の3月。比較の見積があれば見たい";
+    const pieces = memoHighlights(memo, "decision_maker");
+    expect(pieces.map((p) => p.text).join("")).toBe(memo);
+    const marked = pieces.filter((p) => p.mark).map((p) => p.text);
+    expect(marked).toContain("満了は来年の3月");
+    expect(marked.join("")).toContain("リース中");
+    expect(marked.join("")).not.toContain("山本");
   });
 });
 
@@ -178,6 +252,18 @@ describe("sampleTeamInsight（最初のデモデータ）", () => {
     }
     // 見出しで受付突破を課題と言うなら、その気づきが必ずある
     if (r.headline.includes("受付突破")) expect(gate).toBeDefined();
+  });
+
+  it(`記録が少ない（${TEAM_MIN_CALLS}件未満）ときは、結論を出さず「記録が少なめ」と言う`, () => {
+    const from = startOfDay(NOW);
+    const to = addDays(from, 1);
+    const logs = filterLogsByRange(seed.logs, from, to).slice(0, 12);
+    const stats = computeTeamStats({ ...seed, logs, from, to, now: NOW });
+    const r = sampleTeamInsight(stats, logs, seed.members);
+    expect(teamInsightSchema.safeParse(r).success).toBe(true);
+    expect(r.headline).toContain("記録が少なめ");
+    expect(r.findings).toHaveLength(1);
+    for (const m of seed.members) expect(r.headline + r.findings[0].title).not.toContain(name(m.id));
   });
 
   it("見出しのアポ率の評価は、表示している数字と食い違わない", () => {

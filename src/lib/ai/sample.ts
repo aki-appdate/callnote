@@ -2,13 +2,7 @@
 // AIと同じ形（CallInsight / TeamInsight）を返すので、画面側はどちらが動いたかを気にしなくてよい。
 
 import { OBJECTION_LABEL, OBJECTION_OUTCOMES, OUTCOME_LABEL } from "../labels";
-import {
-  addBusinessDays,
-  addDays,
-  nextBusinessDayIfWeekend,
-  startOfDay,
-  toDateKey,
-} from "../dates";
+import { addBusinessDays, addDays, isBusinessDay, nextBusinessDay, startOfDay, toDateKey } from "../dates";
 import type {
   CallInsight,
   CallLog,
@@ -55,9 +49,10 @@ export function detectTemperature(memo: string, outcome: CallOutcome, objection:
 const WEEKDAY_CHARS = ["日", "月", "火", "水", "木", "金", "土"];
 
 /**
- * メモの中の「来週」「明日」「金曜」「15日」「2〜3日後」などから日付を読み取る。読めなければnull。
- * 「明日」「N日後」のような相対的な言い方で土日に当たったら、次の営業日にずらす。
+ * メモの中の「来週」「明日」「金曜」「15日」「2〜3日後」「来年の3月」「3月末」などから日付を読み取る。読めなければnull。
+ * 「明日」「N日後」「来週」「金曜」のような言い方で土日・祝日・年末年始に当たったら、次の営業日にずらす。
  * 「11月13日」「20日」のようにはっきり書かれた日は、今日を含めてそのまま使う（過ぎていれば翌年・翌月）。
+ * 「3月」「来年の3月」のように月だけなら、その月の最初の営業日。「3月末」なら、その月の最後の営業日。
  */
 export function parseDateFromMemo(memo: string, now: Date): Date | null {
   const today = startOfDay(now);
@@ -67,25 +62,30 @@ export function parseDateFromMemo(memo: string, now: Date): Date | null {
     if (d < today) d.setFullYear(d.getFullYear() + 1);
     return d;
   }
+  // 「来年の3月」「3月末」「4月中旬」：日にちのない月の言い方（「3か月」「3ヶ月」は数字の直後が「月」でないので拾わない）
+  const month = memo.match(/(来年)?(?:の)?\s*(\d{1,2})月(末|下旬|中旬|上旬|頭|初め)?/);
+  if (month && Number(month[2]) >= 1 && Number(month[2]) <= 12) {
+    return monthToDate(today, Number(month[2]) - 1, Boolean(month[1]), month[3]);
+  }
   // 「2〜3日後」「3日後」：幅があるときは早いほうに合わせる
   const after = memo.match(/(\d{1,2})(?:\s*[〜~～\-ー]\s*\d{1,2})?\s*日後/);
-  if (after) return nextBusinessDayIfWeekend(addDays(today, Number(after[1])));
+  if (after) return nextBusinessDay(addDays(today, Number(after[1])));
   const weeks = memo.match(/(\d{1,2})\s*週間後/);
-  if (weeks) return nextBusinessDayIfWeekend(addDays(today, Number(weeks[1]) * 7));
-  if (/明後日|あさって/.test(memo)) return nextBusinessDayIfWeekend(addDays(today, 2));
-  if (/明日/.test(memo)) return nextBusinessDayIfWeekend(addDays(today, 1));
+  if (weeks) return nextBusinessDay(addDays(today, Number(weeks[1]) * 7));
+  if (/明後日|あさって/.test(memo)) return nextBusinessDay(addDays(today, 2));
+  if (/明日/.test(memo)) return nextBusinessDay(addDays(today, 1));
   const wd = memo.match(/(来週)?(?:の)?\s*([月火水木金])曜/);
   if (wd) {
     const target = WEEKDAY_CHARS.indexOf(wd[2]);
-    if (wd[1]) return addDays(nextMonday(today), target - 1);
+    if (wd[1]) return nextBusinessDay(addDays(nextMonday(today), target - 1));
     const diff = (target - today.getDay() + 7) % 7 || 7;
-    return addDays(today, diff);
+    return nextBusinessDay(addDays(today, diff));
   }
-  if (/来週/.test(memo)) return nextMonday(today);
-  if (/来月/.test(memo)) return nextBusinessDayIfWeekend(new Date(today.getFullYear(), today.getMonth() + 1, 1));
+  if (/来週/.test(memo)) return nextBusinessDay(nextMonday(today));
+  if (/来月/.test(memo)) return nextBusinessDay(new Date(today.getFullYear(), today.getMonth() + 1, 1));
   if (/月末/.test(memo)) {
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    return end > today ? end : new Date(today.getFullYear(), today.getMonth() + 2, 0);
+    const end = lastBusinessDayOfMonth(today.getFullYear(), today.getMonth());
+    return end >= today ? end : lastBusinessDayOfMonth(today.getFullYear(), today.getMonth() + 1);
   }
   const day = memo.match(/(\d{1,2})日/);
   if (day) {
@@ -99,6 +99,55 @@ export function parseDateFromMemo(memo: string, now: Date): Date | null {
 
 function nextMonday(today: Date): Date {
   return addDays(today, (8 - today.getDay()) % 7 || 7);
+}
+
+function lastBusinessDayOfMonth(year: number, month: number): Date {
+  let d = new Date(year, month + 1, 0);
+  while (!isBusinessDay(d)) d = addDays(d, -1);
+  return d;
+}
+
+/** 「(来年の)M月(末)」を日付にする。来年と書いていなければ、今日以降で一番近いその月 */
+function monthToDate(today: Date, month: number, nextYear: boolean, part: string | undefined): Date {
+  const at = (year: number): Date => {
+    if (part === "末" || part === "下旬") {
+      return part === "末" ? lastBusinessDayOfMonth(year, month) : nextBusinessDay(new Date(year, month, 21));
+    }
+    if (part === "中旬") return nextBusinessDay(new Date(year, month, 11));
+    return nextBusinessDay(new Date(year, month, 1));
+  };
+  if (nextYear) return at(today.getFullYear() + 1);
+  if (month === today.getMonth()) {
+    // 今月の話：もう過ぎた区切り（今月の頭など）なら、今日から数えて次の営業日
+    const d = at(today.getFullYear());
+    return d >= today ? d : nextBusinessDay(today);
+  }
+  return at(month > today.getMonth() ? today.getFullYear() : today.getFullYear() + 1);
+}
+
+/** 契約の満了・更新に触れた文。ここに書かれた日付は「満了日」で、次に電話する日ではない */
+const CONTRACT_END = /満了|契約の?更新|更新時期|リースが?切れ|契約が?切れ/;
+
+/**
+ * メモから契約の満了時期を読む。満了に触れていなければ null。
+ * 触れていても月が書かれていなければ date は null（「来年の春」など）。
+ */
+export function findContractEnd(memo: string, now: Date): { sentence: string; date: Date | null } | null {
+  const sentence = contractEndSentence(memo);
+  if (!sentence) return null;
+  return { sentence, date: parseDateFromMemo(sentence, now) };
+}
+
+/** 満了・更新に触れた文（読点・句点で区切った1つ）。日付は読まない */
+function contractEndSentence(memo: string): string | undefined {
+  return memo.split(/[。\n、]/).find((x) => CONTRACT_END.test(x));
+}
+
+/** 満了の何か月前に比較見積を出すか。満了月の2か月前の月の初め＝満了（月末）の約3か月前 */
+export const PROPOSE_MONTHS_BEFORE_END = 2;
+
+export function proposalDateForContractEnd(end: Date): Date {
+  return nextBusinessDay(new Date(end.getFullYear(), end.getMonth() - PROPOSE_MONTHS_BEFORE_END, 1));
 }
 
 /** メモに日付が無いときの次回日。保存時に「AIを使わずに保存」したときも同じ規則を使う */
@@ -116,7 +165,7 @@ export function defaultNextDate(outcome: CallOutcome, objection: Objection, now:
       return null;
     case "rejected":
       // 他社契約中なら、契約の見直し時期を狙って3か月後にもう一度
-      return objection === "already_have" ? nextBusinessDayIfWeekend(addDays(now, 90)) : null;
+      return objection === "already_have" ? nextBusinessDay(addDays(now, 90)) : null;
   }
 }
 
@@ -175,10 +224,30 @@ export function sampleCallInsight(input: {
   const memo = input.memo.trim();
   const objection = detectObjection(memo, input.outcome);
   const temperature = detectTemperature(memo, input.outcome, objection);
-  const parsed = parseDateFromMemo(memo, input.now);
-  const next = parsed ?? defaultNextDate(input.outcome, objection, input.now);
+  // 満了の話は、担当者本人と話せた（断られた）ときだけ次の一手に使う。満了日そのものは次回日にしない
+  const contractEnd = OBJECTION_OUTCOMES.has(input.outcome) ? findContractEnd(memo, input.now) : null;
+  const parsed = parseDateFromMemo(contractEnd ? memo.replace(contractEnd.sentence, "") : memo, input.now);
+  let next = parsed ?? defaultNextDate(input.outcome, objection, input.now);
+  let talkPoints = OUTCOME_TALK_POINTS[input.outcome] ?? TALK_POINTS[objection];
+  let coachingTip = OUTCOME_COACHING[input.outcome] ?? COACHING[objection];
 
   const uncertainties: string[] = [];
+  if (contractEnd) {
+    const proposal = contractEnd.date ? proposalDateForContractEnd(contractEnd.date) : null;
+    const soon = addBusinessDays(input.now, 3);
+    if (!contractEnd.date) {
+      talkPoints = ["満了の月を確かめる", "見直しの比較材料として資料送付を提案"];
+      uncertainties.push("満了の月がメモから読み取れません（分かれば次回日を合わせられます）");
+    } else if (proposal && proposal > soon) {
+      next = parsed ?? proposal;
+      talkPoints = ["満了の2〜3か月前に比較見積を提案", "今の月額と不満な点をもう一度確かめる"];
+      coachingTip = "満了時期が聞けたのは前進です。満了の2〜3か月前が、乗り換えを比べてもらいやすい時期です。";
+    } else {
+      next = parsed ?? addBusinessDays(input.now, 1);
+      talkPoints = ["満了が近いので、すぐに比較見積を出す", "乗り換えの手続きと時期を説明する"];
+      coachingTip = "満了が近い相手は、比べる材料を早く渡した会社が有利です。";
+    }
+  }
   if (memo.length < 10) uncertainties.push("メモが短く、相手の反応までは読み取れません");
   if (!parsed && input.outcome === "callback") uncertainties.push("折り返しの日時がメモにありません");
   if (input.outcome === "rejected" && objection === "other")
@@ -202,10 +271,10 @@ export function sampleCallInsight(input: {
     objection,
     nextAction: {
       date: next ? toDateKey(next) : null,
-      talkPoints: clampTalkPoints(OUTCOME_TALK_POINTS[input.outcome] ?? TALK_POINTS[objection]),
+      talkPoints: clampTalkPoints(talkPoints),
     },
-    coachingTip: OUTCOME_COACHING[input.outcome] ?? COACHING[objection],
-    uncertainties,
+    coachingTip,
+    uncertainties: uncertainties.slice(0, 3),
   };
 }
 
@@ -213,12 +282,36 @@ export function sampleCallInsight(input: {
 export const BEST_MIN_APPOINTMENTS = 3;
 export const BEST_MIN_CALLS = 30;
 
+/**
+ * チームの傾向を言うのに必要な最低の架電数。これより少ない期間は「記録が少なめ」とだけ伝え、結論を出さない。
+ * SV画面の初期表示（今週が少なければ直近2週間に広げる）も同じ数を使う。
+ */
+export const TEAM_MIN_CALLS = 30;
+/** メンバー1人について「受付で止まりがち」と言うのに必要な最低の架電数 */
+export const MEMBER_MIN_CALLS = 20;
+
+/** 記録が少ない期間に返す分析。数件の偏りで「誰が悪い」と言わないため、結論は出さない */
+export function thinTeamInsight(stats: TeamStats, logs: CallLog[]): TeamInsight {
+  return {
+    headline: `記録が少なめ（${stats.team.calls}件）のため、まだ傾向は言い切れません`,
+    findings: [
+      {
+        title: "記録が少なめです",
+        detail: `この期間の架電は${stats.team.calls}件で、傾向を見る目安（${TEAM_MIN_CALLS}件）に届いていません。数件の偏りで判断しないよう、気づきは出していません。`,
+        evidenceLogIds: logs.slice(0, 3).map((l) => l.id),
+      },
+    ],
+    actions: ["期間を「直近2週間」に広げて、もう一度分析する"],
+  };
+}
+
 export function sampleTeamInsight(stats: TeamStats, logs: CallLog[], members: Member[]): TeamInsight {
+  if (stats.team.calls < TEAM_MIN_CALLS && logs.length > 0) return thinTeamInsight(stats, logs);
   const findings: TeamInsight["findings"] = [];
   const name = (id: string) => members.find((m) => m.id === id)?.name ?? "メンバー";
 
   // 受付で止まりがちな人
-  const withCalls = stats.members.filter((m) => m.calls >= 5);
+  const withCalls = stats.members.filter((m) => m.calls >= MEMBER_MIN_CALLS);
   const gateCandidate = [...withCalls].sort((a, b) => b.gatekeeperRate - a.gatekeeperRate)[0];
   const gateLogs = gateCandidate
     ? logs.filter((l) => l.memberId === gateCandidate.memberId && l.outcome === "gatekeeper").slice(0, 3)
@@ -312,4 +405,44 @@ function buildHeadline(stats: TeamStats, gateName: string | null, objectionLabel
 
 function pct(n: number): string {
   return `${Math.round(n * 1000) / 10}%`;
+}
+
+/** 結果ごとに、メモのどこが判断の決め手になったかを示す言葉 */
+const OUTCOME_KEYS: Partial<Record<CallOutcome, RegExp>> = {
+  gatekeeper: /受付|外出中|在席|戻り時間|お断り|メールで/,
+  callback: /折り返し|かけ直/,
+  appointment: /アポ|面談|訪問/,
+};
+
+export type MemoPiece = { text: string; mark: boolean };
+
+/**
+ * メモを「蛍光ペンを引く部分」と「そのままの部分」に分ける。
+ * 見本の返答が判断に使った言葉（断りの理由・前向きな言葉・満了の時期・結果の決め手）に線を引く。
+ * 画面では、AIが読んだところを人がすぐ確かめられるように使う（判断そのものには使わない）。
+ */
+export function memoHighlights(memo: string, outcome: CallOutcome): MemoPiece[] {
+  const patterns: RegExp[] = [];
+  if (OBJECTION_OUTCOMES.has(outcome)) {
+    patterns.push(...OBJECTION_RULES.map((r) => r.pattern), POSITIVE);
+    const end = contractEndSentence(memo);
+    if (end) patterns.push(new RegExp(end.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  const key = OUTCOME_KEYS[outcome];
+  if (key) patterns.push(key);
+
+  const marked = new Array<boolean>(memo.length).fill(false);
+  for (const p of patterns) {
+    const re = new RegExp(p.source, "g");
+    for (const m of memo.matchAll(re)) {
+      for (let i = m.index; i < m.index + m[0].length; i++) marked[i] = true;
+    }
+  }
+  const pieces: MemoPiece[] = [];
+  for (let i = 0; i < memo.length; i++) {
+    const last = pieces[pieces.length - 1];
+    if (last && last.mark === marked[i]) last.text += memo[i];
+    else pieces.push({ text: memo[i], mark: marked[i] });
+  }
+  return pieces;
 }

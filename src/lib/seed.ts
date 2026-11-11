@@ -1,9 +1,10 @@
 // デモ用のデータ。会社名・人名・電話番号はすべて架空。
 // 乱数の種を固定しているので、誰が開いても同じ傾向のデータになる。
 // 毎回「今日」を基準に作り直すので、何日後に開いても「過去2週間ぶんの記録がある今日」の状態になる。
+// 土日・祝日・年末年始（dates.ts の表）は電話をかけない。
 
 import { defaultNextDate, sampleCallInsight } from "./ai/sample";
-import { addDays, isWeekend, startOfDay, toDateKey } from "./dates";
+import { addDays, isBusinessDay, startOfDay, toDateKey } from "./dates";
 import type { CallInsight, CallLog, CallOutcome, Lead, Member } from "./types";
 
 export const MEMBERS: Member[] = [
@@ -69,7 +70,7 @@ const MEMOS: Record<string, string[]> = {
   ],
   "dm:busy": ["担当者と話せたが、今は忙しいので来週また電話してほしいとのこと"],
   "dm:already_have": [
-    "担当者と話せた。複合機は他社でリース中で、満了は来年の春とのこと",
+    "担当者と話せた。複合機は他社でリース中で、満了は来年の3月とのこと",
     "担当者と話せた。法人携帯は他社で契約中。不満は特にないとのこと",
   ],
   "dm:price": ["担当者と話せた。今の費用が高いとは感じているが、乗り換えの手間が気になる様子。見積があれば比較したい"],
@@ -164,7 +165,7 @@ export function createSeedData(now: Date = new Date()): SeedData {
   const newCursor = new Map(callers.map((m) => [m.id, 0]));
 
   while (day <= today) {
-    if (!isWeekend(day)) {
+    if (isBusinessDay(day)) {
       for (const m of callers) {
         const prof = PROFILES[m.id];
         const myLeads = leadsOf.get(m.id)!;
@@ -271,4 +272,12 @@ function weighted<T extends string>(weights: Record<T, number>, rand: () => numb
     if (r < 0) return k;
   }
   return entries[entries.length - 1][0];
+}
+
+/**
+ * デモデータとして作った記録か。デモの記録は「log-00001」の形で、利用者が保存した記録（log-時刻-乱数）とは形が違う。
+ * デモの記録は人が確認していないので、画面で「人が確認済み」と書かないために使う。
+ */
+export function isDemoLog(log: Pick<CallLog, "id">): boolean {
+  return /^log-\d{5}$/.test(log.id);
 }
