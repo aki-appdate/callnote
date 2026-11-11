@@ -291,6 +291,11 @@ export const TEAM_MIN_CALLS = 30;
 export const MEMBER_MIN_CALLS = 20;
 
 /** 記録が少ない期間に返す分析。数件の偏りで「誰が悪い」と言わないため、結論は出さない */
+/** 根拠は同じ文面のメモを避けて選ぶ（同じ文が並ぶと、同じ電話が何度も出ているように見えるため） */
+function uniqueByMemo(xs: CallLog[]): CallLog[] {
+  return [...new Map(xs.map((l) => [l.memo, l])).values()];
+}
+
 export function thinTeamInsight(stats: TeamStats, logs: CallLog[]): TeamInsight {
   return {
     headline: `記録が少なめ（${stats.team.calls}件）のため、まだ傾向は言い切れません`,
@@ -298,7 +303,7 @@ export function thinTeamInsight(stats: TeamStats, logs: CallLog[]): TeamInsight 
       {
         title: "記録が少なめです",
         detail: `この期間の架電は${stats.team.calls}件で、傾向を見る目安（${TEAM_MIN_CALLS}件）に届いていません。数件の偏りで判断しないよう、気づきは出していません。`,
-        evidenceLogIds: logs.slice(0, 3).map((l) => l.id),
+        evidenceLogIds: uniqueByMemo(logs).slice(0, 3).map((l) => l.id),
       },
     ],
     actions: ["期間を「直近2週間」に広げて、もう一度分析する"],
@@ -314,7 +319,7 @@ export function sampleTeamInsight(stats: TeamStats, logs: CallLog[], members: Me
   const withCalls = stats.members.filter((m) => m.calls >= MEMBER_MIN_CALLS);
   const gateCandidate = [...withCalls].sort((a, b) => b.gatekeeperRate - a.gatekeeperRate)[0];
   const gateLogs = gateCandidate
-    ? logs.filter((l) => l.memberId === gateCandidate.memberId && l.outcome === "gatekeeper").slice(0, 3)
+    ? uniqueByMemo(logs.filter((l) => l.memberId === gateCandidate.memberId && l.outcome === "gatekeeper")).slice(0, 3)
     : [];
   const worstGate =
     gateCandidate && gateCandidate.gatekeeperRate > stats.team.gatekeeperRate + 0.05 && gateLogs.length ? gateCandidate : null;
@@ -334,8 +339,6 @@ export function sampleTeamInsight(stats: TeamStats, logs: CallLog[], members: Me
   const tied = topObjection
     ? (Object.entries(stats.objections) as [Objection, number][]).filter(([k, v]) => k !== "none" && k !== topObjection[0] && v === topObjection[1])
     : [];
-  // 根拠は同じ文面のメモを避けて選ぶ（同じ文が並ぶと、同じ電話が何度も出ているように見えるため）
-  const uniqueByMemo = (xs: CallLog[]) => [...new Map(xs.map((l) => [l.memo, l])).values()];
   const objLogs = topObjection
     ? uniqueByMemo(logs.filter((l) => countsAsObjection(l) && (l.insight?.objection === topObjection[0] || tied.some(([k]) => l.insight?.objection === k)))).slice(0, 3)
     : [];
@@ -363,7 +366,7 @@ export function sampleTeamInsight(stats: TeamStats, logs: CallLog[], members: Me
     top.memberId !== worstGate?.memberId
       ? top
       : undefined;
-  const bestLogs = best ? logs.filter((l) => l.memberId === best.memberId && l.outcome === "appointment").slice(0, 3) : [];
+  const bestLogs = best ? uniqueByMemo(logs.filter((l) => l.memberId === best.memberId && l.outcome === "appointment")).slice(0, 3) : [];
   if (best && bestLogs.length) {
     findings.push({
       title: `${name(best.memberId)}さんのアポ率が高い`,

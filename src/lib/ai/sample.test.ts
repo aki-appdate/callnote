@@ -299,6 +299,18 @@ describe("sampleTeamInsight（最初のデモデータ）", () => {
     expect(obj?.title).not.toContain("一番多い");
   });
 
+  it("どの気づきの根拠にも、同じ文面のメモを並べない", () => {
+    const from = addDays(startOfDay(NOW), -13);
+    const to = addDays(startOfDay(NOW), 1);
+    const logs = filterLogsByRange(seed.logs, from, to);
+    const r = sampleTeamInsight(computeTeamStats({ ...seed, from, to, now: NOW }), logs, seed.members);
+    const byId = new Map(logs.map((l) => [l.id, l]));
+    for (const f of r.findings) {
+      const memos = f.evidenceLogIds.map((id) => byId.get(id)!.memo);
+      expect(new Set(memos).size).toBe(memos.length);
+    }
+  });
+
   it("断りの気づきの根拠に、同じ文面のメモを並べない", () => {
     const from = addDays(startOfDay(NOW), -13);
     const to = addDays(startOfDay(NOW), 1);
