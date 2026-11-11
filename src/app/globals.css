@@ -1,23 +1,42 @@
 @import "tailwindcss";
 
-/* 色はここで決めた名前だけを使う。画面ごとに色を足さない。 */
+/*
+ * 色はここで決めた名前だけを使う。画面ごとに色を足さない。
+ * 方針：墨（ink）が主役。黄色のマーカー（marker）は「いま選んでいるもの・今日やること」だけ。
+ * 詳しくは docs/design.md。
+ */
 @theme {
-  --color-ink: #1c2430;
-  --color-ink-soft: #4a5565;
-  --color-ink-muted: #7b8594;
-  --color-line: #e3e7ee;
+  --color-ink: #15171a;
+  --color-ink-soft: #464b53;
+  --color-ink-muted: #676e78;
+  --color-line: #e1e3e5;
+  --color-line-strong: #c3c7cc;
   --color-surface: #ffffff;
-  --color-canvas: #f5f7fa;
-  --color-brand: #1f5fbf;
-  --color-brand-strong: #174a96;
-  --color-brand-soft: #e8f0fc;
-  --color-good: #16794c;
-  --color-good-soft: #e5f5ec;
-  --color-warn: #a35a00;
-  --color-warn-soft: #fff3df;
-  --color-bad: #b42318;
-  --color-bad-soft: #fdecea;
+  --color-canvas: #f1f2f1;
+  /* 墨のバー（ヘッダー・紹介ページの冒頭） */
+  --color-console: #15171a;
+  --color-console-soft: #24272c;
+  --color-console-line: #34383e;
+  --color-console-text: #c9ccd1;
+  /* 押すボタンは墨 */
+  --color-brand: #15171a;
+  --color-brand-strong: #000000;
+  --color-brand-soft: #eceeef;
+  /* 蛍光マーカー */
+  --color-marker: #ffd43b;
+  --color-marker-soft: #fff6cf;
+  --color-good: #157347;
+  --color-good-soft: #e3f3ea;
+  --color-warn: #8f5200;
+  --color-warn-soft: #fdf0d8;
+  --color-bad: #c0281b;
+  --color-bad-soft: #fdeceb;
+  /* グラフ：1系列は1色。強調しない棒は chart-muted */
+  --color-chart: #3a3f47;
+  --color-chart-muted: #c6cad0;
+
   --font-sans: var(--font-noto), "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-mono: var(--font-mono-jb), ui-monospace, "SFMono-Regular", monospace;
 }
 
 html {
@@ -27,10 +46,39 @@ html {
 
 body {
   font-family: var(--font-sans);
+  font-feature-settings: "palt" 0;
   -webkit-font-smoothing: antialiased;
+  line-break: strict;
+}
+
+/* 見出しは文節の途中で折り返さない（対応ブラウザのみ） */
+h1,
+h2,
+h3 {
+  word-break: auto-phrase;
+  text-wrap: balance;
+}
+
+::selection {
+  background: var(--color-marker);
+  color: var(--color-ink);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-brand);
+  outline: 2px solid var(--color-ink);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--color-marker);
+}
+
+/* 墨の面の上ではフォーカスを黄色で */
+.on-console :focus-visible {
+  outline-color: var(--color-marker);
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
 }
