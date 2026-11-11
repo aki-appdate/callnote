@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// お試しの人は匿名ログインし、自分の workspaces/{uid} の下だけを読み書きできる。
+// 他の人のデータは読めず、決められた形以外のデータは書き込めない。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /workspaces/{uid} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['seedBase'])
+        && request.resource.data.seedBase is string;
+
+      match /logs/{logId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && request.resource.data.id == logId
+          && request.resource.data.memo is string
+          && request.resource.data.memo.size() <= 400
+          && request.resource.data.outcome in ['no_answer', 'gatekeeper', 'decision_maker', 'callback', 'appointment', 'rejected'];
+        // 記録は後から書き換えない（監査のため）
+        allow update: if false;
+      }
+
+      match /leadPatches/{leadId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['id', 'status', 'nextCallAt'])
+          && request.resource.data.id == leadId
+          && request.resource.data.status in ['new', 'calling', 'followup', 'appointment', 'lost'];
+      }
+    }
+  }
+}
