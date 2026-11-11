@@ -15,8 +15,9 @@ export function BarList({ rows, unit = "件", emphasizeTop = true }: { rows: { l
   return (
     <figure>
       <ul className="space-y-2">
-        {rows.map((r, i) => {
-          const top = emphasizeTop && i === 0 && r.value > 0;
+        {rows.map((r) => {
+          // 同数の1位はどれも濃くする（並び順だけで1本を選ばない）
+          const top = emphasizeTop && r.value > 0 && r.value === max;
           return (
             <li
               key={r.label}

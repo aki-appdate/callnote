@@ -18,6 +18,9 @@ const RANGES: { id: Range; label: string }[] = [
   { id: "2weeks", label: "直近2週間" },
 ];
 
+/** 予定日を過ぎたフォローは、まず古い順に5件。残りは押して開く（途中で切れた行を見せない） */
+const OVERDUE_PREVIEW = 5;
+
 function rangeBounds(range: Range, now: Date): { from: Date; to: Date } {
   const to = addDays(startOfDay(now), 1);
   const from = range === "today" ? startOfDay(now) : range === "week" ? startOfWeek(now) : addDays(startOfDay(now), -13);
@@ -39,6 +42,7 @@ export default function SvPage() {
     return filterLogsByRange(logs, from, to).length < TEAM_MIN_CALLS;
   });
   const [range, setRange] = useState<Range>(weekWasThin ? "2weeks" : "week");
+  const [showAllOverdue, setShowAllOverdue] = useState(false);
 
   const { from, to, now } = useMemo(() => {
     const now = new Date();
@@ -134,8 +138,8 @@ export default function SvPage() {
               予定日を過ぎたフォロー
             </CardTitle>
             {overdue.length ? (
-              <ul className="max-h-[22rem] overflow-y-auto overscroll-contain">
-                {overdue.map((l) => (
+              <ul id="overdue-list">
+                {(showAllOverdue ? overdue : overdue.slice(0, OVERDUE_PREVIEW)).map((l) => (
                   <li key={l.id} className="border-b border-line px-4 py-2 text-sm last:border-0">
                     <div className="flex items-baseline justify-between gap-3">
                       <span className="min-w-0 truncate font-bold">{l.company}</span>
@@ -152,7 +156,19 @@ export default function SvPage() {
                   </li>
                 ))}
               </ul>
-            ) : (
+            ) : null}
+            {overdue.length > OVERDUE_PREVIEW && (
+              <button
+                className="flex w-full items-center justify-between rounded-b-md border-t border-line px-4 py-2.5 text-left text-xs font-medium text-ink-soft hover:bg-canvas hover:text-ink"
+                aria-expanded={showAllOverdue}
+                aria-controls="overdue-list"
+                onClick={() => setShowAllOverdue((v) => !v)}
+              >
+                {showAllOverdue ? "古い5件だけにする" : <span>残り<Num className="mx-0.5 font-bold text-ink">{overdue.length - OVERDUE_PREVIEW}</Num>件も見る</span>}
+                <Icon name="chevron-down" className={cx("size-3.5 transition-transform", showAllOverdue && "rotate-180")} />
+              </button>
+            )}
+            {overdue.length === 0 && (
               <p className="flex items-center gap-2 px-5 py-4 text-sm text-good">
                 <Icon name="check" />
                 予定日を過ぎたフォローはありません。

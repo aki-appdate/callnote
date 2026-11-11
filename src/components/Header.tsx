@@ -100,7 +100,8 @@ export function Header() {
       </header>
       {/* デモの断り書きは、スクロールで隠れてよいので固定バーの外に置く */}
       <p className="border-b border-line bg-surface px-4 py-1 text-center text-[11px] text-ink-muted">
-        デモ版です。会社名・人名・電話番号などのデータはすべて架空のものです。
+        <span className="sm:hidden">デモ版：会社名・人名・電話番号はすべて架空です</span>
+        <span className="max-sm:hidden">デモ版です。会社名・人名・電話番号などのデータはすべて架空のものです。</span>
       </p>
     </>
   );
