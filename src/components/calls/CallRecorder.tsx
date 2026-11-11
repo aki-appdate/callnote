@@ -6,6 +6,7 @@ import { AiSourceBadge, btn, Card, CardTitle, cx } from "../ui";
 import { analyzeCall } from "@/lib/ai";
 import { OBJECTION_LABEL, OUTCOME_LABEL, OUTCOME_ORDER, TEMPERATURE_LABEL } from "@/lib/labels";
 import { toDateKey } from "@/lib/dates";
+import { clampTalkPoints, TALK_POINT_MAX_CHARS, TALK_POINT_MAX_LINES } from "@/lib/ai/sample";
 import type { AiSource, CallInsight, CallLog, CallOutcome, Lead, Objection, Temperature } from "@/lib/types";
 
 /** 試す人がすぐ動きを見られるよう、結果ごとにメモの例を用意 */
@@ -51,7 +52,7 @@ export function CallRecorder({ lead, history, onSaving, onNext }: { lead: Lead; 
     const insight = raw && {
       ...raw,
       summary: raw.summary.trim(),
-      nextAction: { ...raw.nextAction, talkPoints: raw.nextAction.talkPoints.map((s) => s.trim()).filter(Boolean) },
+      nextAction: { ...raw.nextAction, talkPoints: clampTalkPoints(raw.nextAction.talkPoints.map((s) => s.trim()).filter(Boolean)) },
     };
     setPhase("saving");
     setSaveError(null);
@@ -212,7 +213,7 @@ function InsightReview(props: {
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="sm:col-span-2 text-xs text-ink-soft">
           要約
-          <textarea className={field("summary")} rows={2} value={draft.summary} onChange={(e) => set("summary", e.target.value)} />
+          <textarea className={field("summary")} rows={2} maxLength={200} value={draft.summary} onChange={(e) => set("summary", e.target.value)} />
         </label>
         <label className="text-xs text-ink-soft">
           相手の温度感
@@ -243,10 +244,14 @@ function InsightReview(props: {
             value={draft.nextAction.date ?? ""}
             onChange={(e) => onChange({ ...draft, nextAction: { ...draft.nextAction, date: e.target.value || null } })}
           />
-          <span className="mt-0.5 block text-[11px] text-ink-muted">空欄なら、この案件にはもう電話しません</span>
+          <span className={cx("mt-0.5 block text-[11px]", draft.nextAction.date ? "text-ink-muted" : "font-medium text-warn")}>
+            {draft.nextAction.date
+              ? "空欄にすると、この案件は「見送り」になり、もう電話しません"
+              : "空欄のまま保存すると「見送り」になり、今日かける一覧から外れます"}
+          </span>
         </label>
         <label className="text-xs text-ink-soft">
-          次に話すこと（1行に1つ）
+          次に話すこと（1行に1つ・{TALK_POINT_MAX_LINES}行まで）
           <textarea
             className={field("nextAction.talkPoints")}
             rows={3}
@@ -254,10 +259,14 @@ function InsightReview(props: {
             onChange={(e) =>
               onChange({
                 ...draft,
-                nextAction: { ...draft.nextAction, talkPoints: e.target.value.split("\n").filter((s, i, a) => s.trim() || i === a.length - 1) },
+                nextAction: {
+                  ...draft.nextAction,
+                  talkPoints: clampTalkPoints(e.target.value.split("\n").filter((s, i, a) => s.trim() || i === a.length - 1)),
+                },
               })
             }
           />
+          <span className="mt-0.5 block text-[11px] text-ink-muted">1行{TALK_POINT_MAX_CHARS}文字まで</span>
         </label>
       </div>
 

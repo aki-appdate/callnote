@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useApp } from "../AppProvider";
 import { AiSourceBadge, Badge, btn, Card, CardTitle } from "../ui";
 import { analyzeTeam } from "@/lib/ai";
@@ -21,7 +21,7 @@ export function TeamInsightPanel({ stats, logs }: { stats: TeamStats; logs: Call
     setLoading(false);
   }
 
-  const byId = new Map(logs.map((l) => [l.id, l]));
+  const byId = useMemo(() => new Map(logs.map((l) => [l.id, l])), [logs]);
   const name = (id: string) => members.find((m) => m.id === id)?.name ?? id;
 
   return (

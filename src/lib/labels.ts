@@ -41,3 +41,9 @@ export const TEMPERATURE_LABEL: Record<Temperature, string> = {
   mid: "様子見",
   low: "消極的",
 };
+
+/**
+ * 断りの理由を数える結果。担当者本人と話せたときだけ。
+ * 受付止まり・不在・折り返し待ちは担当者の反応ではないので、断りの集計にも判定にも入れない。
+ */
+export const OBJECTION_OUTCOMES: ReadonlySet<CallOutcome> = new Set<CallOutcome>(["decision_maker", "rejected"]);

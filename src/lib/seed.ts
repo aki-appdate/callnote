@@ -1,9 +1,10 @@
 // デモ用のデータ。会社名・人名・電話番号はすべて架空。
-// 乱数の種を固定しているので、誰が開いても同じ傾向のデータになる（日付だけは「今日」基準でずらす）。
+// 乱数の種を固定しているので、誰が開いても同じ傾向のデータになる。
+// 毎回「今日」を基準に作り直すので、何日後に開いても「過去2週間ぶんの記録がある今日」の状態になる。
 
-import { sampleCallInsight } from "./ai/sample";
-import { addDays, isWeekend, startOfDay } from "./dates";
-import type { CallLog, CallOutcome, Lead, Member } from "./types";
+import { defaultNextDate, sampleCallInsight } from "./ai/sample";
+import { addDays, isWeekend, startOfDay, toDateKey } from "./dates";
+import type { CallInsight, CallLog, CallOutcome, Lead, Member } from "./types";
 
 export const MEMBERS: Member[] = [
   { id: "sv-1", name: "佐藤 美咲", role: "sv" },
@@ -13,29 +14,47 @@ export const MEMBERS: Member[] = [
   { id: "m-4", name: "伊藤 大輝", role: "member" },
 ];
 
-/** メンバーごとのクセ。SV画面で「誰が・どこでつまずいているか」が見えるようにしてある */
-const PROFILES: Record<string, { callsPerDay: number; weights: Record<CallOutcome, number>; dmObjection: string[] }> = {
+/**
+ * メンバーごとのクセ。SV画面で「誰が・どこでつまずいているか」が見えるようにしてある。
+ * 数字は法人向けテレアポ（OA機器・法人携帯）の現場感に合わせている：
+ * 1人1日40〜60件かけ、担当者につながるのは15〜25%、アポは架電の2〜4%（1人1日1〜2件）。
+ * forgetRate は、入れたフォローの予定を見落とす割合。高い人ほど「予定日を過ぎたフォロー」がたまる。
+ */
+const PROFILES: Record<
+  string,
+  { callsPerDay: number; forgetRate: number; weights: Record<CallOutcome, number>; dmObjection: string[] }
+> = {
   "m-1": {
-    callsPerDay: 14,
-    weights: { no_answer: 30, gatekeeper: 18, decision_maker: 22, callback: 12, appointment: 7, rejected: 11 },
+    callsPerDay: 54,
+    forgetRate: 0.004,
+    weights: { no_answer: 43, gatekeeper: 33, decision_maker: 10, callback: 4, appointment: 3.6, rejected: 6.4 },
     dmObjection: ["none", "none", "price", "busy", "already_have"],
   },
   "m-2": {
-    callsPerDay: 15,
-    weights: { no_answer: 28, gatekeeper: 38, decision_maker: 14, callback: 8, appointment: 3, rejected: 9 },
+    callsPerDay: 56,
+    forgetRate: 0.008,
+    weights: { no_answer: 32, gatekeeper: 51, decision_maker: 7, callback: 3, appointment: 1.5, rejected: 5.5 },
     dmObjection: ["none", "busy", "not_decision_maker", "price"],
   },
   "m-3": {
-    callsPerDay: 13,
-    weights: { no_answer: 30, gatekeeper: 17, decision_maker: 24, callback: 10, appointment: 4, rejected: 15 },
+    callsPerDay: 48,
+    forgetRate: 0.004,
+    weights: { no_answer: 40, gatekeeper: 37, decision_maker: 10, callback: 4, appointment: 3.1, rejected: 5.9 },
     dmObjection: ["already_have", "already_have", "already_have", "none", "price"],
   },
   "m-4": {
-    callsPerDay: 10,
-    weights: { no_answer: 34, gatekeeper: 24, decision_maker: 18, callback: 8, appointment: 2, rejected: 14 },
+    callsPerDay: 42,
+    forgetRate: 0.03,
+    weights: { no_answer: 42, gatekeeper: 37, decision_maker: 8, callback: 4, appointment: 2.5, rejected: 6.5 },
     dmObjection: ["no_need", "busy", "none", "not_decision_maker"],
   },
 };
+
+/** 担当者に一度もつながらないまま、この回数かけたら見送る（リストを回すための現場の運用ルール） */
+const MAX_UNREACHED_ATTEMPTS = 4;
+
+/** デモの案件数。1人1日50件前後かけても、2週間でリストが尽きない数にしてある */
+export const LEAD_COUNT = 2600;
 
 const MEMOS: Record<string, string[]> = {
   no_answer: ["呼び出すが誰も出ず", "話し中だった", "留守電。メッセージは残していない"],
@@ -73,6 +92,8 @@ const PREFIXES = [
   "ことぶき", "やまびこ", "わかば", "ほしの", "くすのき", "しらかば", "あけぼの", "みなと", "はるか", "こだま",
   "たちばな", "ゆうき", "まほろば", "せせらぎ", "ひまわり", "あかね", "のぞみ", "やまと", "そよかぜ", "いずみ",
 ];
+/** 社名の真ん中に入れる言葉。PREFIXES×MIDDLES×業種の語尾の組み合わせで、社名が重ならないようにする */
+const MIDDLES = ["", "テック", "総合", "第一", "中部", "東海", "ニュー", "グリーン", "スター"];
 const INDUSTRIES: { name: string; suffixes: string[] }[] = [
   { name: "製造業", suffixes: ["精工", "製作所", "金属工業", "樹脂"] },
   { name: "建設業", suffixes: ["建設", "工務店", "設備"] },
@@ -103,19 +124,25 @@ export function createSeedData(now: Date = new Date()): SeedData {
   const pick = <T,>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
   const callers = MEMBERS.filter((m) => m.role === "member");
 
-  const leads: Lead[] = [];
-  const used = new Set<string>();
-  for (let i = 0; i < 320; i++) {
-    const ind = INDUSTRIES[i % INDUSTRIES.length];
-    let base = "";
-    for (let k = 0; !base || used.has(base); k++) {
-      base = `${PREFIXES[(Math.floor(i / INDUSTRIES.length) + k) % PREFIXES.length]}${ind.suffixes[(i + k) % ind.suffixes.length]}`;
+  // 業種ごとに、重ならない社名の候補を作って混ぜておく
+  const namePools = INDUSTRIES.map((ind) => {
+    const names: string[] = [];
+    for (const suffix of ind.suffixes) for (const pre of PREFIXES) for (const mid of MIDDLES) names.push(`${pre}${mid}${suffix}`);
+    for (let i = names.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [names[i], names[j]] = [names[j], names[i]];
     }
-    used.add(base);
+    return names;
+  });
+
+  const leads: Lead[] = [];
+  for (let i = 0; i < LEAD_COUNT; i++) {
+    const indIdx = i % INDUSTRIES.length;
+    const base = namePools[indIdx][Math.floor(i / INDUSTRIES.length)];
     leads.push({
-      id: `lead-${String(i + 1).padStart(3, "0")}`,
+      id: `lead-${String(i + 1).padStart(4, "0")}`,
       company: i % 3 === 0 ? `${base}株式会社` : `株式会社${base}`,
-      industry: ind.name,
+      industry: INDUSTRIES[indIdx].name,
       prefecture: pick(PREFS),
       employees: 5 + Math.floor(rand() * 120),
       contactName: pick(CONTACTS),
@@ -131,26 +158,41 @@ export function createSeedData(now: Date = new Date()): SeedData {
   const today = startOfDay(now);
   let day = addDays(today, -15);
   let seq = 0;
+  const unreached = new Map<string, number>();
+  const forgotten = new Set<string>();
+  const leadsOf = new Map(callers.map((m) => [m.id, leads.filter((l) => l.assigneeId === m.id)]));
+  const newCursor = new Map(callers.map((m) => [m.id, 0]));
 
   while (day <= today) {
     if (!isWeekend(day)) {
       for (const m of callers) {
         const prof = PROFILES[m.id];
-        const myLeads = leads.filter((l) => l.assigneeId === m.id);
-        const n = prof.callsPerDay + Math.floor(rand() * 5) - 2;
+        const myLeads = leadsOf.get(m.id)!;
+        const n = prof.callsPerDay + Math.floor(rand() * 9) - 4;
         for (let k = 0; k < n; k++) {
-          const minutes = 9 * 60 + 30 + Math.floor((k / n) * 8 * 60) + Math.floor(rand() * 20);
+          const minutes = 9 * 60 + 30 + Math.floor((k / n) * 8 * 60) + Math.floor(rand() * 8);
           const at = new Date(day);
           at.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
           if (at > now) break;
 
           // 現場と同じく、予定日が来たフォローを先にかけ、空いた時間で新規にかける
           const atIso = at.toISOString();
-          const due = myLeads
-            .filter((l) => l.nextCallAt !== null && l.nextCallAt <= atIso && l.status !== "appointment" && l.status !== "lost")
-            .sort((a, b) => a.nextCallAt!.localeCompare(b.nextCallAt!));
-          const lead: Lead | undefined =
-            (rand() < 0.75 ? due[0] : undefined) ?? myLeads.find((l) => l.status === "new") ?? due[0];
+          let due: Lead | undefined;
+          for (const l of myLeads) {
+            if (
+              l.nextCallAt !== null &&
+              l.nextCallAt <= atIso &&
+              (l.status === "calling" || l.status === "followup") &&
+              !forgotten.has(l.id)
+            ) {
+              if (!due || l.nextCallAt < due.nextCallAt!) due = l;
+            }
+          }
+          let cur = newCursor.get(m.id)!;
+          while (cur < myLeads.length && myLeads[cur].status !== "new") cur++;
+          newCursor.set(m.id, cur);
+          const fresh = myLeads[cur];
+          const lead: Lead | undefined = due ?? fresh;
           if (!lead) break;
 
           const outcome = weighted(prof.weights, rand);
@@ -165,7 +207,7 @@ export function createSeedData(now: Date = new Date()): SeedData {
 
           seq++;
           logs.push({
-            id: `log-${String(seq).padStart(4, "0")}`,
+            id: `log-${String(seq).padStart(5, "0")}`,
             leadId: lead.id,
             memberId: m.id,
             at: at.toISOString(),
@@ -175,7 +217,15 @@ export function createSeedData(now: Date = new Date()): SeedData {
             aiSource: insight ? "sample" : null,
             editedFields: [],
           });
-          applyLogToLead(lead, outcome, insight?.nextAction.date ?? null, at);
+          applyLogToLead(lead, outcome, insight, at);
+
+          const misses = outcome === "no_answer" || outcome === "gatekeeper" ? (unreached.get(lead.id) ?? 0) + 1 : -Infinity;
+          unreached.set(lead.id, misses);
+          if (misses >= MAX_UNREACHED_ATTEMPTS && lead.status === "calling") {
+            lead.status = "lost";
+            lead.nextCallAt = null;
+          }
+          if (lead.nextCallAt !== null && rand() < prof.forgetRate) forgotten.add(lead.id);
         }
       }
     }
@@ -185,26 +235,31 @@ export function createSeedData(now: Date = new Date()): SeedData {
   return { members: MEMBERS, leads, logs };
 }
 
-/** 架電結果から案件の状態と次回予定を更新する（保存時にも同じルールを使う） */
-export function applyLogToLead(lead: Lead, outcome: CallOutcome, nextDate: string | null, at: Date): void {
+/**
+ * 架電結果から案件の状態と次回予定を更新する（デモデータ作成・保存時の両方で同じルールを使う）。
+ * - AIの整理を確認して保存した場合：「次に電話する日」が空欄なら、もう電話しない＝「見送り」にする。
+ * - AIを使わずに保存した場合：結果に応じた標準の間隔（不在なら翌営業日など）で次回を入れる。
+ */
+export function applyLogToLead(lead: Lead, outcome: CallOutcome, insight: CallInsight | null, at: Date): void {
   if (outcome === "appointment") {
     lead.status = "appointment";
     lead.nextCallAt = null;
     return;
   }
-  if (outcome === "rejected" && !nextDate) {
+  let nextDate: string | null;
+  if (insight) {
+    nextDate = insight.nextAction.date;
+  } else {
+    const d = defaultNextDate(outcome, "other", at);
+    nextDate = d ? toDateKey(d) : null;
+  }
+  if (!nextDate) {
     lead.status = "lost";
     lead.nextCallAt = null;
     return;
   }
   lead.status = outcome === "no_answer" || outcome === "gatekeeper" ? "calling" : "followup";
-  if (nextDate) {
-    lead.nextCallAt = new Date(`${nextDate}T10:00:00`).toISOString();
-  } else {
-    const next = addDays(at, 1);
-    next.setHours(10, 0, 0, 0);
-    lead.nextCallAt = next.toISOString();
-  }
+  lead.nextCallAt = new Date(`${nextDate}T10:00:00`).toISOString();
 }
 
 function weighted<T extends string>(weights: Record<T, number>, rand: () => number): T {

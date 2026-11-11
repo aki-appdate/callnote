@@ -26,6 +26,7 @@ export default function CallsPage() {
       .sort((a, b) => (a.nextCallAt ?? "9").localeCompare(b.nextCallAt ?? "9"));
     return {
       today: due,
+      dueFollowups: due.filter((l) => l.status !== "new").length,
       open: myLeads.filter((l) => l.status !== "appointment" && l.status !== "lost"),
       won: myLeads.filter((l) => l.status === "appointment"),
     };
@@ -58,7 +59,7 @@ export default function CallsPage() {
         <Stat label="今日の架電" value={myToday?.calls ?? 0} sub="件" />
         <Stat label="担当者と話せた" value={myToday?.connects ?? 0} sub="件" />
         <Stat label="今日のアポ" value={myToday?.appointments ?? 0} sub="件" />
-        <Stat label="今日かける予定" value={lists.today.length} sub="件 残り" />
+        <Stat label="今日かけるフォロー" value={lists.dueFollowups} sub={`件 残り（ほかに新規 ${lists.today.length - lists.dueFollowups}件）`} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">

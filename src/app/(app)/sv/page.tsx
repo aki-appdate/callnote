@@ -32,16 +32,22 @@ export default function SvPage() {
   const rangeLogs = useMemo(() => filterLogsByRange(logs, from, to), [logs, from, to]);
   const name = (id: string) => members.find((m) => m.id === id)?.name ?? id;
 
-  const objectionRows = (Object.keys(OBJECTION_LABEL) as Objection[])
-    .filter((k) => k !== "none")
-    .map((k) => ({ label: OBJECTION_LABEL[k], value: stats.objections[k] }))
-    .sort((a, b) => b.value - a.value);
+  const objectionRows = useMemo(
+    () =>
+      (Object.keys(OBJECTION_LABEL) as Objection[])
+        .filter((k) => k !== "none")
+        .map((k) => ({ label: OBJECTION_LABEL[k], value: stats.objections[k] }))
+        .sort((a, b) => b.value - a.value),
+    [stats],
+  );
 
-  const today = toDateKey(now);
-  const overdue = leads
-    .filter((l) => l.nextCallAt && (l.status === "followup" || l.status === "calling") && toDateKey(new Date(l.nextCallAt)) < today)
-    .sort((a, b) => a.nextCallAt!.localeCompare(b.nextCallAt!))
-    .slice(0, 8);
+  const overdue = useMemo(() => {
+    const today = toDateKey(now);
+    return leads
+      .filter((l) => l.nextCallAt && (l.status === "followup" || l.status === "calling") && toDateKey(new Date(l.nextCallAt)) < today)
+      .sort((a, b) => a.nextCallAt!.localeCompare(b.nextCallAt!))
+      .slice(0, 8);
+  }, [leads, now]);
 
   const teamGate = stats.team.gatekeeperRate;
 
@@ -124,12 +130,12 @@ export default function SvPage() {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
-          <CardTitle>断りの理由</CardTitle>
+          <CardTitle aside={<span className="text-xs text-ink-muted">担当者と話せた電話のみ</span>}>断りの理由</CardTitle>
           <div className="px-5 py-4">
             {objectionRows.some((r) => r.value > 0) ? (
               <BarList rows={objectionRows} />
             ) : (
-              <p className="text-sm text-ink-muted">この期間の記録はまだありません。</p>
+              <p className="text-sm text-ink-muted">この期間に担当者から断られた記録はまだありません。</p>
             )}
           </div>
         </Card>

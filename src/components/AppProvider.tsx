@@ -76,7 +76,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const lead = leads.find((l) => l.id === log.leadId);
       if (!lead) return;
       const updated: Lead = { ...lead };
-      applyLogToLead(updated, log.outcome, log.insight?.nextAction.date ?? null, new Date(log.at));
+      applyLogToLead(updated, log.outcome, log.insight, new Date(log.at));
       // 先に画面へ反映し、保存に失敗したら元に戻す
       setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       setLogs((prev) => [...prev, log]);

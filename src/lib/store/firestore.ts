@@ -1,12 +1,9 @@
 import { getAuth, signInAnonymously } from "firebase/auth";
 import {
   collection,
-  deleteDoc,
   doc,
-  getDoc,
   getDocs,
   getFirestore,
-  setDoc,
   writeBatch,
   type Firestore,
 } from "firebase/firestore";
@@ -17,6 +14,7 @@ import { mergeWorkspace, type DataStore, type LeadPatch } from "./types";
 
 // Firebaseが設定されているときの保存先。
 // お試しの人ごとに匿名ログインし、workspaces/{uid} の下にだけ書き込む（他人のデータは読めない。firestore.rules参照）。
+// デモデータは毎回「今日」を基準に作り直すので保存しない。書き込むのは、保存1回につき記録1件＋案件の変更1件だけ。
 
 export class FirestoreStore implements DataStore {
   readonly kind = "firestore" as const;
@@ -38,21 +36,13 @@ export class FirestoreStore implements DataStore {
   async load() {
     const uid = await this.userId();
     const wsRef = doc(this.db, "workspaces", uid);
-    const ws = await getDoc(wsRef);
-    let seedBase: string;
-    if (ws.exists()) {
-      seedBase = ws.data().seedBase as string;
-    } else {
-      seedBase = new Date().toISOString();
-      await setDoc(wsRef, { seedBase });
-    }
     const [logsSnap, patchSnap] = await Promise.all([
       getDocs(collection(wsRef, "logs")),
       getDocs(collection(wsRef, "leadPatches")),
     ]);
     const logs = logsSnap.docs.map((d) => d.data() as CallLog);
     const patches = patchSnap.docs.map((d) => d.data() as LeadPatch);
-    return mergeWorkspace(createSeedData(new Date(seedBase)), logs, patches);
+    return mergeWorkspace(createSeedData(new Date()), logs, patches);
   }
 
   async saveCall(log: CallLog, lead: Lead) {
@@ -79,6 +69,5 @@ export class FirestoreStore implements DataStore {
     logsSnap.docs.forEach((d) => batch.delete(d.ref));
     patchSnap.docs.forEach((d) => batch.delete(d.ref));
     await batch.commit();
-    await deleteDoc(wsRef);
   }
 }

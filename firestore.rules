@@ -2,25 +2,57 @@ rules_version = '2';
 
 // お試しの人は匿名ログインし、自分の workspaces/{uid} の下だけを読み書きできる。
 // 他の人のデータは読めず、決められた形以外のデータは書き込めない。
+// workspaces/{uid} 自体には何も保存しない（デモデータは毎回「今日」を基準に作り直すため）。
 service cloud.firestore {
   match /databases/{database}/documents {
     function isOwner(uid) {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    match /workspaces/{uid} {
-      allow read, delete: if isOwner(uid);
-      allow create, update: if isOwner(uid)
-        && request.resource.data.keys().hasOnly(['seedBase'])
-        && request.resource.data.seedBase is string;
+    function isShortString(v, max) {
+      return v is string && v.size() <= max;
+    }
 
+    function isDateKeyOrNull(v) {
+      return v == null || (v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+    }
+
+    // AIの整理結果（人が確認したもの）。src/lib/schemas.ts と同じ形・上限
+    function isValidInsight(i) {
+      return i is map
+        && i.keys().hasOnly(['summary', 'temperature', 'objection', 'nextAction', 'coachingTip', 'uncertainties'])
+        && i.keys().hasAll(['summary', 'temperature', 'objection', 'nextAction', 'coachingTip', 'uncertainties'])
+        && isShortString(i.summary, 200)
+        && i.temperature in ['high', 'mid', 'low']
+        && i.objection in ['none', 'busy', 'no_need', 'already_have', 'price', 'not_decision_maker', 'other']
+        && i.nextAction is map
+        && i.nextAction.keys().hasOnly(['date', 'talkPoints'])
+        && isDateKeyOrNull(i.nextAction.date)
+        && i.nextAction.talkPoints is list
+        && i.nextAction.talkPoints.size() <= 3
+        && isShortString(i.coachingTip, 200)
+        && i.uncertainties is list
+        && i.uncertainties.size() <= 3;
+    }
+
+    match /workspaces/{uid} {
       match /logs/{logId} {
         allow read, delete: if isOwner(uid);
         allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['id', 'leadId', 'memberId', 'at', 'outcome', 'memo', 'insight', 'aiSource', 'editedFields'])
+          && request.resource.data.keys().hasAll(['id', 'leadId', 'memberId', 'at', 'outcome', 'memo', 'insight', 'aiSource', 'editedFields'])
           && request.resource.data.id == logId
-          && request.resource.data.memo is string
-          && request.resource.data.memo.size() <= 400
-          && request.resource.data.outcome in ['no_answer', 'gatekeeper', 'decision_maker', 'callback', 'appointment', 'rejected'];
+          && isShortString(request.resource.data.id, 64)
+          && isShortString(request.resource.data.leadId, 32)
+          && isShortString(request.resource.data.memberId, 16)
+          && isShortString(request.resource.data.at, 32)
+          && request.resource.data.at.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*')
+          && isShortString(request.resource.data.memo, 400)
+          && request.resource.data.outcome in ['no_answer', 'gatekeeper', 'decision_maker', 'callback', 'appointment', 'rejected']
+          && (request.resource.data.insight == null || isValidInsight(request.resource.data.insight))
+          && (request.resource.data.aiSource == null || request.resource.data.aiSource in ['gemini', 'sample'])
+          && request.resource.data.editedFields is list
+          && request.resource.data.editedFields.size() <= 5;
         // 記録は後から書き換えない（監査のため）
         allow update: if false;
       }
@@ -30,7 +62,10 @@ service cloud.firestore {
         allow create, update: if isOwner(uid)
           && request.resource.data.keys().hasOnly(['id', 'status', 'nextCallAt'])
           && request.resource.data.id == leadId
-          && request.resource.data.status in ['new', 'calling', 'followup', 'appointment', 'lost'];
+          && request.resource.data.status in ['new', 'calling', 'followup', 'appointment', 'lost']
+          && (request.resource.data.nextCallAt == null
+            || (isShortString(request.resource.data.nextCallAt, 32)
+              && request.resource.data.nextCallAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*')));
       }
     }
   }

@@ -1,6 +1,7 @@
 // SV画面の数字はすべてここで計算する。画面からは計算式を追い出し、テストで確かめられるようにする。
 
 import { addDays, startOfDay, toDateKey } from "./dates";
+import { OBJECTION_OUTCOMES } from "./labels";
 import type { CallLog, Lead, Member, Objection } from "./types";
 
 export type MemberStats = {
@@ -25,6 +26,11 @@ export type TeamStats = {
 };
 
 const CONNECTED = new Set(["decision_maker", "callback", "appointment", "rejected"]);
+
+/** 断りの集計に入れる記録か。担当者と話せた・お断りのときだけ（受付止まりの「決裁者ではない」などは数えない） */
+export function countsAsObjection(log: CallLog): boolean {
+  return log.insight !== null && OBJECTION_OUTCOMES.has(log.outcome);
+}
 
 function rate(a: number, b: number): number {
   return b === 0 ? 0 : a / b;
@@ -74,14 +80,20 @@ export function computeTeamStats(params: {
     not_decision_maker: 0,
     other: 0,
   };
+  // 日ごとの集計は、記録を1回なめて日付ごとに振り分ける（記録が数千件あっても重くならないように）
+  const byDay = new Map<string, CallLog[]>();
   for (const l of logs) {
-    if (l.insight) objections[l.insight.objection]++;
+    if (countsAsObjection(l)) objections[l.insight!.objection]++;
+    const key = toDateKey(new Date(l.at));
+    const list = byDay.get(key);
+    if (list) list.push(l);
+    else byDay.set(key, [l]);
   }
 
   const daily: TeamStats["daily"] = [];
   for (let d = startOfDay(from); d < to; d = addDays(d, 1)) {
     const key = toDateKey(d);
-    const dayLogs = logs.filter((l) => toDateKey(new Date(l.at)) === key);
+    const dayLogs = byDay.get(key) ?? [];
     if (d.getDay() === 0 || d.getDay() === 6) {
       if (dayLogs.length === 0) continue;
     }

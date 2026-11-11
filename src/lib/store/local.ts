@@ -4,9 +4,12 @@ import { mergeWorkspace, type DataStore, type LeadPatch } from "./types";
 
 // Firebaseが未設定のときの保存先。このブラウザの中だけに保存する。
 
-const KEY = "callnote:workspace:v1";
+// v1 は「お試しを始めた日時」を基準にデモデータを作っていた。数日後に開くとデータが古びるため、
+// v2 から毎回「今日」を基準に作り直し、利用者が追加した分だけを保存する。
+const KEY = "callnote:workspace:v2";
+const OLD_KEYS = ["callnote:workspace:v1"];
 
-type Saved = { seedBase: string; logs: CallLog[]; patches: LeadPatch[] };
+type Saved = { logs: CallLog[]; patches: LeadPatch[] };
 
 function read(): Saved | null {
   try {
@@ -30,9 +33,11 @@ export class LocalStore implements DataStore {
   private state: Saved | null = null;
 
   async load() {
-    this.state = read() ?? { seedBase: new Date().toISOString(), logs: [], patches: [] };
-    write(this.state);
-    return mergeWorkspace(createSeedData(new Date(this.state.seedBase)), this.state.logs, this.state.patches);
+    try {
+      OLD_KEYS.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+    this.state = read() ?? { logs: [], patches: [] };
+    return mergeWorkspace(createSeedData(new Date()), this.state.logs, this.state.patches);
   }
 
   async saveCall(log: CallLog, lead: Lead) {

@@ -5,7 +5,7 @@ import { callInsightJsonSchema, callInsightSchema, teamInsightJsonSchema, teamIn
 import type { AiSource, CallInsight, CallLog, CallOutcome, Lead, Member, TeamInsight } from "../types";
 import { generateStructured } from "./gemini";
 import { buildCallPrompt, buildTeamPrompt, CALL_SYSTEM, TEAM_SYSTEM } from "./prompts";
-import { sampleCallInsight, sampleTeamInsight } from "./sample";
+import { clampTalkPoints, sampleCallInsight, sampleTeamInsight } from "./sample";
 
 // 画面から呼ぶのはこのファイルだけ。
 // Geminiが使えれば使い、使えなければ（未設定・回数の上限・エラー・返答の形が不正）見本の返答に切り替える。
@@ -60,10 +60,14 @@ export async function analyzeCall(input: {
       schema: callInsightSchema,
       jsonSchema: callInsightJsonSchema,
     });
+    value.nextAction.talkPoints = clampTalkPoints(value.nextAction.talkPoints);
     // 過去の日付が返ってきたら使わない（人が決め直す）
-    if (value.nextAction.date && value.nextAction.date <= toDateKey(now)) {
+    if (value.nextAction.date && value.nextAction.date < toDateKey(now)) {
       value.nextAction.date = null;
-      value.uncertainties = [...value.uncertainties, "AIの提案した日付が過去だったため、日付は空にしています"].slice(0, 3);
+      value.uncertainties = [
+        ...value.uncertainties,
+        "AIの提案した日付が過去だったため空にしました。このままだと見送りになります",
+      ].slice(0, 3);
     }
     return { value, source: "gemini" };
   } catch (e) {
