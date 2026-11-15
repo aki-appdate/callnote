@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/aki-appdate/callnote/actions/workflows/ci.yml/badge.svg)](https://github.com/aki-appdate/callnote/actions/workflows/ci.yml)
 
+**デモ：** https://callnote-sigma.vercel.app （ログイン不要。公開中のデモは Firebase につないでいないため、AIの部分は見本の返答で動きます）
+
 架電メモをAIが整理し、**次の一手**と**チームの改善点**を見える化するWebアプリです。
 テレアポのオペレーターとSV（現場リーダー）を経験した筆者が、現場で感じた課題をもとに作りました。設計・仕様決め・動作確認は筆者、実装は Claude Code（AIコーディングツール）です。
 
@@ -52,7 +54,7 @@ AIが使えないときの「見本の返答」はルールベースです。メ
 | AI | Firebase AI Logic + Gemini（Gemini Developer API の無料枠・Spark プラン） |
 | セキュリティ | Firestore セキュリティルール（[firestore.rules](firestore.rules)）、App Check（reCAPTCHA v3） |
 | 品質 | Vitest（単体テスト）、ESLint、GitHub Actions（push・PRで lint・型・テスト・ビルドを走らせる設定） |
-| 公開 | Vercel（予定） |
+| 公開 | Vercel（https://callnote-sigma.vercel.app） |
 
 ```
 src/
